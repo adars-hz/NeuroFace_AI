@@ -1,0 +1,31 @@
+1.Create the Python virtual environment
+   python -m venv venv
+
+2.Activate the virtual environment
+    .\venv\Scripts\Activate.ps1
+
+## FastAPI is used to develop the backend REST APIs of the NeuroFace system. 
+   Uvicorn acts as the ASGI server that runs the FastAPI application. 
+   The root endpoint confirms that the backend is running successfully.
+
+3.Install python-dotenv
+    python -m pip install python-dotenv
+    What is python-dotenv?
+    Our .env file is just text, for example:
+        DATABASE_URL=...
+        SECRET_KEY=...
+    Python doesn't automatically read those values.
+
+4.SQLAlchemy
+        SQLAlchemy is our ORM (Object-Relational Mapper).
+        Instead of writing SQL everywhere like:
+            SELECT * FROM students;
+        we'll eventually be able to work with Python objects such as:
+            student = ...
+        SQLAlchemy translates between Python and the database.
+
+5.PyMySQL
+    PyMySQL is the database driver that allows Python/SQLAlchemy to communicate with MySQL.
+
+6.
+6282089429
