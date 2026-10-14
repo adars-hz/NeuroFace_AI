@@ -10,6 +10,9 @@ from app.api.teachers import router as teachers_router
 from app.api.classrooms import router as classrooms_router
 from app.api.departments import router as departments_router
 from app.api.subjects import router as subjects_router
+from app.api.teacher_assignments import router as teacher_assignments_router
+from app.api.attendance_sessions import router as attendance_sessions_router
+from app.api.attendance_records import router as attendance_records_router
 
 app = FastAPI(title=APP_NAME)
 
@@ -20,6 +23,9 @@ app.include_router(classrooms_router)
 app.include_router(students_router)
 app.include_router(teachers_router)
 app.include_router(subjects_router)
+app.include_router(teacher_assignments_router)
+app.include_router(attendance_sessions_router)
+app.include_router(attendance_records_router)
 
 
 @app.get("/")

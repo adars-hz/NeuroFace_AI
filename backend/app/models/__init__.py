@@ -5,3 +5,5 @@ from app.models.department import Department
 from app.models.classroom import Classroom
 from app.models.subject import Subject
 from app.models.teacher_assignment import TeacherAssignment
+from app.models.attendance_session import AttendanceSession
+from app.models.attendance_record import AttendanceRecord
