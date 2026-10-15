@@ -7,3 +7,4 @@ from app.models.subject import Subject
 from app.models.teacher_assignment import TeacherAssignment
 from app.models.attendance_session import AttendanceSession
 from app.models.attendance_record import AttendanceRecord
+from app.models.face_registration import FaceRegistration
