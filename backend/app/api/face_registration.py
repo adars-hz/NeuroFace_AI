@@ -1,24 +1,17 @@
-
 from io import BytesIO
 from pathlib import Path
 
-from fastapi import (
-    APIRouter,
-    Depends,
-    File,
-    HTTPException,
-    UploadFile,
-    status,
-)
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
+from facenet_pytorch import MTCNN
 from sqlalchemy.orm import Session
 
 from app.core.auth import require_roles
 from app.database.deps import get_db
 from app.models.face_registration import FaceRegistration
 from app.models.student import Student
-from app.models.user import User
 from app.schemas.face_registration import FaceRegistrationResponse
+from app.services.face_embedding_service import save_student_embedding
 
 router = APIRouter(
     prefix="/face-registration",
@@ -29,16 +22,18 @@ UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads" / "faces"
 MAX_FILE_SIZE = 5 * 1024 * 1024
 ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP"}
 
-
-@router.post(
-    "/",
-    response_model=FaceRegistrationResponse,
-    status_code=status.HTTP_201_CREATED,
+# Initialize the face detector once when the API module loads.
+face_detector = MTCNN(
+    keep_all=True,
+    device="cpu",
 )
+
+
+@router.post("/", response_model=FaceRegistrationResponse, status_code=201)
 async def register_face(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("STUDENT")),
+    current_user=Depends(require_roles("STUDENT")),
 ):
     student = (
         db.query(Student)
@@ -47,7 +42,7 @@ async def register_face(
     )
 
     if student is None:
-        raise HTTPException(404, "Student profile not found")
+        raise HTTPException(status_code=404, detail="Student profile not found")
 
     existing = (
         db.query(FaceRegistration)
@@ -55,36 +50,40 @@ async def register_face(
         .first()
     )
 
-    if existing is not None:
+    if existing:
         raise HTTPException(
-            409,
-            "A face registration already exists for this student",
+            status_code=409,
+            detail="Face registration already exists for this student",
         )
 
     content = await file.read(MAX_FILE_SIZE + 1)
 
     if not content:
-        raise HTTPException(400, "Uploaded file is empty")
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
     if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(413, "Image must be 5 MB or smaller")
+        raise HTTPException(
+            status_code=413,
+            detail="Image must be 5 MB or smaller",
+        )
 
     try:
         image = Image.open(BytesIO(content))
+        image_format = image.format
         image.verify()
 
         image = Image.open(BytesIO(content))
 
-        if image.format not in ALLOWED_FORMATS:
+        if image_format not in ALLOWED_FORMATS:
             raise HTTPException(
-                400,
-                "Only JPEG, PNG, and WEBP images are accepted",
+                status_code=400,
+                detail="Only JPEG, PNG, and WEBP images are allowed",
             )
 
         if image.width < 100 or image.height < 100:
             raise HTTPException(
-                400,
-                "Image dimensions must be at least 100 x 100 pixels",
+                status_code=400,
+                detail="Image dimensions must be at least 100 x 100 pixels",
             )
 
         image = image.convert("RGB")
@@ -92,11 +91,43 @@ async def register_face(
     except HTTPException:
         raise
     except (UnidentifiedImageError, OSError, ValueError):
-        raise HTTPException(400, "Uploaded file is not a valid image")
+        raise HTTPException(status_code=400, detail="Invalid image file")
+
+    try:
+        boxes, scores = face_detector.detect(image)
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Face detection is temporarily unavailable",
+        )
+
+    if boxes is None or scores is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No face detected. Upload a clear photo showing one face.",
+        )
+
+    # Ignore detections with low confidence.
+    valid_faces = [
+        (box, score)
+        for box, score in zip(boxes, scores)
+        if score is not None and score >= 0.90
+    ]
+
+    if len(valid_faces) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="No sufficiently clear face detected. Try another photo.",
+        )
+
+    if len(valid_faces) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Multiple faces detected. Upload a photo showing only you.",
+        )
 
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Use a server-generated filename, never the uploaded filename.
     filename = f"student_{student.id}.jpg"
     destination = UPLOAD_DIR / filename
     relative_path = f"uploads/faces/{filename}"
@@ -111,6 +142,14 @@ async def register_face(
         )
 
         db.add(registration)
+        db.flush()
+
+        save_student_embedding(
+            db=db,
+            student_id=student.id,
+            image=image,
+        )
+
         db.commit()
         db.refresh(registration)
 
@@ -128,7 +167,7 @@ async def register_face(
 @router.get("/my", response_model=FaceRegistrationResponse)
 def get_my_face_registration(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("STUDENT")),
+    current_user=Depends(require_roles("STUDENT")),
 ):
     student = (
         db.query(Student)
@@ -137,7 +176,7 @@ def get_my_face_registration(
     )
 
     if student is None:
-        raise HTTPException(404, "Student profile not found")
+        raise HTTPException(status_code=404, detail="Student profile not found")
 
     registration = (
         db.query(FaceRegistration)
@@ -146,6 +185,9 @@ def get_my_face_registration(
     )
 
     if registration is None:
-        raise HTTPException(404, "No face registration found")
+        raise HTTPException(
+            status_code=404,
+            detail="Face registration not found",
+        )
 
     return registration
