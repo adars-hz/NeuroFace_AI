@@ -26,8 +26,6 @@ def save_student_embedding(
     if existing:
         existing.embedding = embedding_bytes
         existing.model_name = "facenet-vggface2"
-        db.commit()
-        db.refresh(existing)
         return existing
 
     record = FaceEmbedding(
@@ -35,15 +33,6 @@ def save_student_embedding(
         embedding=embedding_bytes,
         model_name="facenet-vggface2",
     )
-
-    try:
-        db.add(record)
-        db.commit()
-        db.refresh(record)
-        return record
-    except Exception:
-        db.rollback()
-        raise
 
 
 def load_student_embedding(

@@ -15,6 +15,8 @@ from app.api.attendance_sessions import router as attendance_sessions_router
 from app.api.attendance_records import router as attendance_records_router
 from app.api.attendance_summary import router as attendance_summary_router
 from app.api.face_registration import router as face_registration_router
+from app.api.face_recognition import router as face_recognition_router
+from app.api.leave_requests import router as leave_requests_router
 
 app = FastAPI(title=APP_NAME)
 
@@ -30,7 +32,8 @@ app.include_router(attendance_sessions_router)
 app.include_router(attendance_records_router)
 app.include_router(attendance_summary_router)
 app.include_router(face_registration_router)
-
+app.include_router(face_recognition_router)
+app.include_router(leave_requests_router)
 
 @app.get("/")
 def root():
