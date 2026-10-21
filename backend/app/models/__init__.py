@@ -10,3 +10,4 @@ from app.models.attendance_record import AttendanceRecord
 from app.models.face_registration import FaceRegistration
 from app.models.face_embedding import FaceEmbedding
 from app.models.leave_request import LeaveRequest
+from app.models.medical_waiver import MedicalWaiver

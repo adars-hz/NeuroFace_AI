@@ -17,6 +17,8 @@ from app.api.attendance_summary import router as attendance_summary_router
 from app.api.face_registration import router as face_registration_router
 from app.api.face_recognition import router as face_recognition_router
 from app.api.leave_requests import router as leave_requests_router
+from app.api.medical_waivers import router as medical_waivers_router
+from app.api.reports import router as reports_router
 
 app = FastAPI(title=APP_NAME)
 
@@ -34,6 +36,8 @@ app.include_router(attendance_summary_router)
 app.include_router(face_registration_router)
 app.include_router(face_recognition_router)
 app.include_router(leave_requests_router)
+app.include_router(medical_waivers_router)
+app.include_router(reports_router)
 
 @app.get("/")
 def root():

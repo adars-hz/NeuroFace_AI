@@ -7,28 +7,27 @@ from app.database.deps import get_db
 from app.models.attendance_record import AttendanceRecord
 from app.models.attendance_session import AttendanceSession
 from app.models.classroom import Classroom
+from app.models.face_embedding import FaceEmbedding
+from app.models.medical_waiver import MedicalWaiver
 from app.models.student import Student
-from app.models.teacher_assignment import TeacherAssignment
 from app.models.subject import Subject
+from app.models.teacher_assignment import TeacherAssignment
 from app.models.user import User
 
-router = APIRouter(
-    prefix="/attendance-summary",
-    tags=["Attendance Summary"],
-)
+router = APIRouter(prefix="/attendance-summary", tags=["Attendance Summary"])
 
 MINIMUM_ATTENDANCE = 85.0
 
 
 @router.get("/my")
-def my_attendance_summary(
+def get_my_attendance_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     if current_user.role != "STUDENT":
         raise HTTPException(
             status_code=403,
-            detail="This endpoint is only for student accounts",
+            detail="Student access required",
         )
 
     student = (
@@ -37,60 +36,90 @@ def my_attendance_summary(
         .first()
     )
 
-    if student is None:
+    if not student:
         raise HTTPException(
             status_code=404,
             detail="Student profile not found",
         )
 
+    # Match the student's class to configured classes.
+    classrooms = (
+        db.query(Classroom)
+        .filter(Classroom.class_name.ilike(student.class_name.strip()))
+        .all()
+    )
+
+    if not classrooms:
+        return {
+            "student_id": student.id,
+            "minimum_attendance": MINIMUM_ATTENDANCE,
+            "subjects": [],
+        }
+
+    classroom_ids = [classroom.id for classroom in classrooms]
+
     assignments = (
-        db.query(TeacherAssignment, Subject, Classroom)
+        db.query(TeacherAssignment, Subject)
         .join(
             Subject,
             Subject.id == TeacherAssignment.subject_id,
         )
-        .join(
-            Classroom,
-            Classroom.id == TeacherAssignment.class_id,
-        )
-        .filter(
-            Classroom.class_name.ilike(student.class_name.strip())
-        )
+        .filter(TeacherAssignment.class_id.in_(classroom_ids))
         .all()
     )
 
     results = []
 
-    for assignment, subject, classroom in assignments:
-        # Count only sessions that have finished.
-        total_sessions = (
+    for assignment, subject in assignments:
+        # Only closed or expired sessions count toward the calculation.
+        sessions = (
             db.query(AttendanceSession)
             .filter(
                 AttendanceSession.assignment_id == assignment.id,
                 AttendanceSession.status.in_(["CLOSED", "EXPIRED"]),
             )
-            .count()
+            .all()
         )
 
-        # Count this student's PRESENT records for those sessions.
-        present_count = (
-            db.query(AttendanceRecord)
-            .join(
-                AttendanceSession,
-                AttendanceSession.id == AttendanceRecord.session_id,
+        total_sessions = len(sessions)
+        session_ids = [session.id for session in sessions]
+
+        present_count = 0
+
+        if session_ids:
+            present_count = (
+                db.query(AttendanceRecord)
+                .filter(
+                    AttendanceRecord.session_id.in_(session_ids),
+                    AttendanceRecord.student_id == student.id,
+                    AttendanceRecord.status == "PRESENT",
+                )
+                .count()
             )
+
+        # Approved waiver dates are displayed separately.
+        # They do not rewrite attendance records or automatically
+        # convert an absence into attendance.
+        waivers = (
+            db.query(MedicalWaiver)
             .filter(
-                AttendanceRecord.student_id == student.id,
-                AttendanceRecord.status == "PRESENT",
-                AttendanceSession.assignment_id == assignment.id,
-                AttendanceSession.status.in_(["CLOSED", "EXPIRED"]),
+                MedicalWaiver.student_id == student.id,
+                MedicalWaiver.subject_id == subject.id,
+                MedicalWaiver.status == "APPROVED",
             )
-            .count()
+            .all()
         )
+
+        waiver_dates = []
+        for waiver in waivers:
+            waiver_dates.append({
+                "start_date": waiver.start_date.isoformat(),
+                "end_date": waiver.end_date.isoformat(),
+            })
 
         percentage = (
-            round(present_count / total_sessions * 100, 2)
-            if total_sessions > 0
+            round((present_count / total_sessions) * 100, 2)
+            if total_sessions
             else 0.0
         )
 
@@ -101,12 +130,15 @@ def my_attendance_summary(
             "total_sessions": total_sessions,
             "present_sessions": present_count,
             "attendance_percentage": percentage,
-            "exam_eligible": percentage >= MINIMUM_ATTENDANCE
-            and total_sessions > 0,
+            "exam_eligible": (
+                total_sessions > 0
+                and percentage >= MINIMUM_ATTENDANCE
+            ),
+            "approved_medical_waivers": waiver_dates,
         })
 
     return {
-        "student_id": student.student_id,
-        "minimum_required_percentage": MINIMUM_ATTENDANCE,
+        "student_id": student.id,
+        "minimum_attendance": MINIMUM_ATTENDANCE,
         "subjects": results,
     }
