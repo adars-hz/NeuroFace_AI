@@ -1,3 +1,4 @@
+
 import numpy as np
 from PIL import Image
 from sqlalchemy.orm import Session
@@ -11,35 +12,40 @@ def save_student_embedding(
     student_id: int,
     image: Image.Image,
 ) -> FaceEmbedding:
-    """Generate and store one student's face embedding."""
+    """Generate and store one student's 512-dimensional face embedding."""
 
     vector = generate_embedding(image)
 
-    existing = (
+    if vector.shape != (512,):
+        raise ValueError("Generated face embedding must contain 512 values.")
+
+    embedding_bytes = vector.astype(np.float32).tobytes()
+
+    record = (
         db.query(FaceEmbedding)
         .filter(FaceEmbedding.student_id == student_id)
         .first()
     )
 
-    embedding_bytes = vector.astype(np.float32).tobytes()
+    if record is None:
+        record = FaceEmbedding(
+            student_id=student_id,
+            embedding=embedding_bytes,
+            model_name="facenet-vggface2",
+        )
+        db.add(record)
+    else:
+        record.embedding = embedding_bytes
+        record.model_name = "facenet-vggface2"
 
-    if existing:
-        existing.embedding = embedding_bytes
-        existing.model_name = "facenet-vggface2"
-        return existing
-
-    record = FaceEmbedding(
-        student_id=student_id,
-        embedding=embedding_bytes,
-        model_name="facenet-vggface2",
-    )
+    return record
 
 
 def load_student_embedding(
     db: Session,
     student_id: int,
 ) -> np.ndarray | None:
-    """Load a student's stored 512-dimensional vector."""
+    """Load a student's stored 512-dimensional face embedding."""
 
     record = (
         db.query(FaceEmbedding)

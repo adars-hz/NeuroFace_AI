@@ -1,4 +1,5 @@
 
+import { useEffect, useState } from "react";
 import {
   Camera,
   ClipboardCheck,
@@ -7,37 +8,71 @@ import {
   Percent,
   LogOut,
   BookOpen,
+  Upload,
+  RefreshCw,
 } from "lucide-react";
-
-const studentModules = [
-  {
-    title: "Face Registration",
-    description: "Register your face using an authorized photograph.",
-    icon: Camera,
-  },
-  {
-    title: "My Attendance",
-    description: "View your subject-wise attendance records.",
-    icon: ClipboardCheck,
-  },
-  {
-    title: "Attendance Percentage",
-    description: "Check attendance percentages and the 85% requirement.",
-    icon: Percent,
-  },
-  {
-    title: "Leave Status",
-    description: "Review the status of submitted leave documents.",
-    icon: FileText,
-  },
-  {
-    title: "Exam Eligibility",
-    description: "Check eligibility for examinations by subject.",
-    icon: GraduationCap,
-  },
-];
+import { getMyAttendanceSummary, registerMyFace } from "../api";
 
 export default function StudentDashboard({ user, onLogout }) {
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState("");
+
+  async function loadSummary() {
+    setLoading(true);
+    setError("");
+
+    try {
+      const data = await getMyAttendanceSummary();
+      setSummary(data);
+    } catch (err) {
+      setError(
+        err.response?.data?.detail ||
+          "Could not load attendance. Check that the backend is running."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadSummary();
+  }, []);
+
+  async function handleFaceUpload(event) {
+    event.preventDefault();
+    setUploadMessage("");
+
+    if (!selectedFile) {
+      setUploadMessage("Please choose a face image first.");
+      return;
+    }
+
+    setUploading(true);
+
+    try {
+      const result = await registerMyFace(selectedFile);
+      setUploadMessage(
+        result.status
+          ? `Image submitted. Registration status: ${result.status}`
+          : "Face image submitted successfully."
+      );
+      setSelectedFile(null);
+      event.target.reset();
+    } catch (err) {
+      setUploadMessage(
+        err.response?.data?.detail || "Face registration failed."
+      );
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  const subjects = summary?.subjects || [];
+
   return (
     <div className="dashboard-layout">
       <aside className="sidebar">
@@ -71,14 +106,15 @@ export default function StudentDashboard({ user, onLogout }) {
             <p className="eyebrow">STUDENT WORKSPACE</p>
             <h1>Student Dashboard</h1>
             <p className="muted">
-              View your attendance, registration, and academic status.
+              Your attendance and facial registration overview.
             </p>
           </div>
+
           <div className="profile-chip">
             <div className="avatar">S</div>
             <div>
-              <strong>{user?.username || "Student"}</strong>
-              <span>Student</span>
+              <strong>{summary?.student_name || user?.username || "Student"}</strong>
+              <span>{summary?.class_name || "Student account"}</span>
             </div>
           </div>
         </header>
@@ -86,10 +122,10 @@ export default function StudentDashboard({ user, onLogout }) {
         <section className="welcome-card">
           <div>
             <p className="welcome-label">YOUR ACADEMIC OVERVIEW</p>
-            <h2>Welcome, {user?.username || "Student"}!</h2>
+            <h2>Welcome, {summary?.student_name || user?.username || "Student"}!</h2>
             <p>
-              Keep track of your attendance and make sure you meet the
-              minimum attendance requirement for each subject.
+              Review your attendance for each subject and keep your face
+              registration up to date.
             </p>
           </div>
           <div className="welcome-symbol">
@@ -102,30 +138,156 @@ export default function StudentDashboard({ user, onLogout }) {
           <div>
             <strong>Minimum attendance requirement: 85%</strong>
             <p>
-              Final eligibility will be calculated from your recorded attendance
-              according to the system's academic rules.
+              Eligibility shown here is based on the attendance summary
+              returned by the backend.
             </p>
           </div>
         </section>
 
         <section className="section-heading">
           <div>
-            <h2>My Modules</h2>
-            <p className="muted">Your personal attendance workspace.</p>
+            <h2>Subject-wise Attendance</h2>
+            <p className="muted">Your latest attendance summary.</p>
+          </div>
+          <button className="secondary-button" onClick={loadSummary} disabled={loading}>
+            <RefreshCw size={15} /> Refresh
+          </button>
+        </section>
+
+        {loading && <p className="muted">Loading attendance...</p>}
+        {error && <div className="error-message">{error}</div>}
+
+        {!loading && !error && subjects.length === 0 && (
+          <div className="empty-card">
+            No subject attendance data is available yet. Your class and subject
+            assignments may need to be configured by the administrator.
+          </div>
+        )}
+
+        {!loading && !error && subjects.length > 0 && (
+          <section className="attendance-list">
+            {subjects.map((subject) => (
+              <article className="attendance-card" key={subject.subject_id}>
+                <div className="attendance-card-header">
+                  <div>
+                    <span className="subject-code">
+                      {subject.subject_code}
+                    </span>
+                    <h3>{subject.subject_name}</h3>
+                  </div>
+                  <span
+                    className={`eligibility-pill ${
+                      subject.exam_eligible ? "eligible" : "not-eligible"
+                    }`}
+                  >
+                    {subject.eligibility_status ||
+                      (subject.exam_eligible ? "Eligible" : "Not eligible")}
+                  </span>
+                </div>
+
+                <div className="attendance-percentage">
+                  {Number(subject.attendance_percentage || 0).toFixed(2)}%
+                </div>
+
+                <div className="progress-track">
+                  <div
+                    className="progress-fill"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        Math.max(0, Number(subject.attendance_percentage || 0))
+                      )}%`,
+                    }}
+                  />
+                </div>
+
+                <div className="attendance-stats">
+                  <span>
+                    Classes held: <strong>{subject.total_sessions ?? 0}</strong>
+                  </span>
+                  <span>
+                    Present: <strong>{subject.present_sessions ?? 0}</strong>
+                  </span>
+                  <span>
+                    Absent: <strong>{subject.absent_sessions ?? 0}</strong>
+                  </span>
+                </div>
+              </article>
+            ))}
+          </section>
+        )}
+
+        <section className="section-heading">
+          <div>
+            <h2>Face Registration</h2>
+            <p className="muted">
+              Upload a clear image containing only your face.
+            </p>
           </div>
         </section>
 
-        <section className="module-grid">
-          {studentModules.map(({ title, description, icon: Icon }) => (
-            <article className="module-card" key={title}>
-              <div className="module-icon">
-                <Icon size={23} />
-              </div>
-              <h3>{title}</h3>
-              <p>{description}</p>
-              <span className="module-status">Module planned</span>
-            </article>
-          ))}
+        <section className="upload-card">
+          <div className="upload-icon">
+            <Camera size={25} />
+          </div>
+          <div className="upload-content">
+            <h3>Register your face</h3>
+            <p>
+              Use a clear, front-facing JPEG, PNG, or WEBP image. The system
+              checks for a detectable face before saving the registration.
+            </p>
+
+            <form onSubmit={handleFaceUpload}>
+              <label className="file-input-label" htmlFor="face-image">
+                Select face image
+              </label>
+              <input
+                id="face-image"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={(event) =>
+                  setSelectedFile(event.target.files?.[0] || null)
+                }
+              />
+
+              {selectedFile && (
+                <p className="muted">Selected: {selectedFile.name}</p>
+              )}
+
+              <button
+                className="primary-button upload-button"
+                type="submit"
+                disabled={uploading}
+              >
+                <Upload size={16} />
+                {uploading ? "Uploading..." : "Submit face image"}
+              </button>
+            </form>
+
+            {uploadMessage && (
+              <p className="upload-message">{uploadMessage}</p>
+            )}
+          </div>
+        </section>
+
+        <section className="module-grid student-shortcuts">
+          <article className="module-card">
+            <div className="module-icon">
+              <FileText size={23} />
+            </div>
+            <h3>Leave Status</h3>
+            <p>Leave request status will be connected here in a later step.</p>
+            <span className="module-status">Coming next</span>
+          </article>
+
+          <article className="module-card">
+            <div className="module-icon">
+              <GraduationCap size={23} />
+            </div>
+            <h3>Exam Eligibility</h3>
+            <p>Eligibility is displayed above for each available subject.</p>
+            <span className="module-status">Attendance-based</span>
+          </article>
         </section>
       </main>
     </div>

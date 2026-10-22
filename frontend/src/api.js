@@ -19,10 +19,7 @@ api.interceptors.request.use((config) => {
 export async function login(username, password) {
   const response = await api.post(
     "/auth/login",
-    new URLSearchParams({
-      username,
-      password,
-    }),
+    new URLSearchParams({ username, password }),
     {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -30,10 +27,8 @@ export async function login(username, password) {
     }
   );
 
-  const token = response.data.access_token;
-
-  if (token) {
-    localStorage.setItem("neuroface_token", token);
+  if (response.data.access_token) {
+    localStorage.setItem("neuroface_token", response.data.access_token);
   }
 
   return response.data;
@@ -46,6 +41,14 @@ export async function getCurrentUser() {
 
 export async function getMyAttendanceSummary() {
   const response = await api.get("/attendance-summary/my");
+  return response.data;
+}
+
+export async function registerMyFace(imageFile) {
+  const formData = new FormData();
+  formData.append("file", imageFile);
+
+  const response = await api.post("/face-registration/", formData);
   return response.data;
 }
 

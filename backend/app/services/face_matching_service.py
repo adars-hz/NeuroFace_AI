@@ -1,7 +1,9 @@
+
 import numpy as np
 from sqlalchemy.orm import Session
 
 from app.models.face_embedding import FaceEmbedding
+from app.models.face_registration import FaceRegistration
 from app.services.face_recognition_service import cosine_similarity
 
 
@@ -11,23 +13,31 @@ def find_matching_student(
     threshold: float = 0.75,
 ) -> dict:
     """
-    Compare a face embedding with registered student embeddings.
+    Match a face only against approved student registrations.
 
-    The threshold is provisional and must be calibrated using
-    validation data before real attendance use.
+    The similarity threshold is provisional and must be validated
+    using representative face images before real-world use.
     """
 
     if query_embedding.shape != (512,):
         raise ValueError("Query embedding must contain 512 values.")
 
-    records = db.query(FaceEmbedding).all()
+    records = (
+        db.query(FaceEmbedding)
+        .join(
+            FaceRegistration,
+            FaceRegistration.student_id == FaceEmbedding.student_id,
+        )
+        .filter(FaceRegistration.status == "APPROVED")
+        .all()
+    )
 
     if not records:
         return {
             "matched": False,
             "student_id": None,
             "similarity": None,
-            "message": "No registered face embeddings are available.",
+            "message": "No approved face registrations are available.",
         }
 
     best_student_id = None
@@ -62,6 +72,8 @@ def find_matching_student(
     return {
         "matched": False,
         "student_id": None,
-        "similarity": float(best_similarity),
+        "similarity": (
+            float(best_similarity) if best_student_id is not None else None
+        ),
         "message": "Unknown face. No sufficiently close match found.",
     }

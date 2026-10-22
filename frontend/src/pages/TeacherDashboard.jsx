@@ -1,4 +1,4 @@
-
+import { Link } from "react-router-dom";
 import {
   Camera,
   ClipboardCheck,
@@ -107,6 +107,19 @@ export default function TeacherDashboard({ user, onLogout }) {
             <Camera size={52} />
           </div>
         </section>
+
+        <section className="attendance-setup-card">
+            <div className="module-icon">
+                <Camera size={24} />
+            </div>
+            <h2>Take Attendance</h2>
+            <p className="muted">
+                Choose an assigned class and subject to start an attendance session.
+            </p>
+            <Link className="dashboard-link-button" to="/teacher/attendance">
+                Open Attendance Workspace
+            </Link>
+          </section>
 
         {isHod && (
           <section className="hod-notice">

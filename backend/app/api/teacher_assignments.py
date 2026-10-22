@@ -1,9 +1,8 @@
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.auth import require_roles
+from app.core.auth import get_current_user, require_roles
 from app.database.deps import get_db
 from app.models.teacher import Teacher
 from app.models.subject import Subject
@@ -32,26 +31,32 @@ def add_assignment(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("ADMIN")),
 ):
-    teacher = db.query(Teacher).filter(
-        Teacher.id == data.teacher_id
-    ).first()
+    teacher = (
+        db.query(Teacher)
+        .filter(Teacher.id == data.teacher_id)
+        .first()
+    )
 
     if teacher is None:
-        raise HTTPException(404, "Teacher not found")
+        raise HTTPException(status_code=404, detail="Teacher not found")
 
-    subject = db.query(Subject).filter(
-        Subject.id == data.subject_id
-    ).first()
+    subject = (
+        db.query(Subject)
+        .filter(Subject.id == data.subject_id)
+        .first()
+    )
 
     if subject is None:
-        raise HTTPException(404, "Subject not found")
+        raise HTTPException(status_code=404, detail="Subject not found")
 
-    classroom = db.query(Classroom).filter(
-        Classroom.id == data.class_id
-    ).first()
+    classroom = (
+        db.query(Classroom)
+        .filter(Classroom.id == data.class_id)
+        .first()
+    )
 
     if classroom is None:
-        raise HTTPException(404, "Class not found")
+        raise HTTPException(status_code=404, detail="Class not found")
 
     if subject.class_id != data.class_id:
         raise HTTPException(
@@ -59,11 +64,15 @@ def add_assignment(
             detail="The subject does not belong to the selected class",
         )
 
-    existing = db.query(TeacherAssignment).filter(
-        TeacherAssignment.teacher_id == data.teacher_id,
-        TeacherAssignment.subject_id == data.subject_id,
-        TeacherAssignment.class_id == data.class_id,
-    ).first()
+    existing = (
+        db.query(TeacherAssignment)
+        .filter(
+            TeacherAssignment.teacher_id == data.teacher_id,
+            TeacherAssignment.subject_id == data.subject_id,
+            TeacherAssignment.class_id == data.class_id,
+        )
+        .first()
+    )
 
     if existing:
         raise HTTPException(
@@ -82,6 +91,57 @@ def add_assignment(
 
 
 @router.get(
+    "/mine",
+    response_model=list[dict],
+)
+def get_my_assignments(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("TEACHER")),
+):
+    """Return only the assignments belonging to the logged-in teacher."""
+
+    teacher = (
+        db.query(Teacher)
+        .filter(Teacher.user_id == current_user.id)
+        .first()
+    )
+
+    if teacher is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Teacher profile not found",
+        )
+
+    rows = (
+        db.query(TeacherAssignment, Subject, Classroom)
+        .join(
+            Subject,
+            Subject.id == TeacherAssignment.subject_id,
+        )
+        .join(
+            Classroom,
+            Classroom.id == TeacherAssignment.class_id,
+        )
+        .filter(TeacherAssignment.teacher_id == teacher.id)
+        .order_by(TeacherAssignment.id)
+        .all()
+    )
+
+    return [
+        {
+            "id": assignment.id,
+            "teacher_id": assignment.teacher_id,
+            "subject_id": subject.id,
+            "subject_code": subject.subject_code,
+            "subject_name": subject.subject_name,
+            "class_id": classroom.id,
+            "class_name": classroom.class_name,
+        }
+        for assignment, subject, classroom in rows
+    ]
+
+
+@router.get(
     "/",
     response_model=list[TeacherAssignmentResponse],
 )
@@ -89,6 +149,8 @@ def list_assignments(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("ADMIN")),
 ):
+    """Allow administrators to view all assignments."""
+
     return (
         db.query(TeacherAssignment)
         .order_by(TeacherAssignment.id)

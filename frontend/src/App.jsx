@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { login, getCurrentUser, logout } from "./api";
 import AdminDashboard from "./pages/AdminDashboard";
 import TeacherDashboard from "./pages/TeacherDashboard";
+import TeacherAttendance from "./pages/TeacherAttendance";
 import StudentDashboard from "./pages/StudentDashboard";
 import "./App.css";
 
@@ -105,8 +106,7 @@ function App() {
       }
 
       try {
-        const currentUser = await getCurrentUser();
-        setUser(currentUser);
+        setUser(await getCurrentUser());
       } catch {
         logout();
       } finally {
@@ -119,8 +119,7 @@ function App() {
 
   async function handleLogin(username, password) {
     await login(username, password);
-    const currentUser = await getCurrentUser();
-    setUser(currentUser);
+    setUser(await getCurrentUser());
   }
 
   function handleLogout() {
@@ -132,20 +131,24 @@ function App() {
     return <div className="loading-screen">Loading NeuroFace...</div>;
   }
 
-  const homePath = user
-    ? user.role === "ADMIN"
+  const homePath = !user
+    ? "/"
+    : user.role === "ADMIN"
       ? "/admin"
       : user.role === "TEACHER"
         ? "/teacher"
-        : "/student"
-    : "/";
+        : "/student";
 
   return (
     <Routes>
       <Route
         path="/"
         element={
-          user ? <Navigate to={homePath} replace /> : <LoginPage onLogin={handleLogin} />
+          user ? (
+            <Navigate to={homePath} replace />
+          ) : (
+            <LoginPage onLogin={handleLogin} />
+          )
         }
       />
 
@@ -168,6 +171,15 @@ function App() {
       />
 
       <Route
+        path="/teacher/attendance"
+        element={
+          <ProtectedRoute user={user} allowedRoles={["TEACHER"]}>
+            <TeacherAttendance />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
         path="/student"
         element={
           <ProtectedRoute user={user} allowedRoles={["STUDENT"]}>
@@ -179,13 +191,16 @@ function App() {
       <Route
         path="/unauthorized"
         element={
-          <div className="message-page">
+          <main className="message-page">
             <h2>Access denied</h2>
             <p>Your account does not have permission to open this page.</p>
-            <button className="primary-button" onClick={() => window.location.href = homePath}>
+            <button
+              className="primary-button"
+              onClick={() => window.location.assign(homePath)}
+            >
               Return to dashboard
             </button>
-          </div>
+          </main>
         }
       />
 
